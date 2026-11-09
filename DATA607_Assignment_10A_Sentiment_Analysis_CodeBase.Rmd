@@ -1,0 +1,189 @@
+---
+title: "Assignment 10A: Sentiment Analysis"
+author: "Muntasir"
+format: html
+editor: visual
+---
+
+## Introduction
+
+The assignment plans to reproduce the sentiment analysis techniques from Chapter 2 of Text Mining with R by Julia Silge and David Robinson. Using R and the tidytext package, I highlight emotional schemes found in Jane Austen's novels and extend the analysis to Mary Shelley's Frankestein. I also compare different sentiment lexicons to explore how word categorization methods can have levels of impact on results.
+
+```{r}
+
+library(tidytext)
+library(janeaustenr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gutenbergr)
+library(textdata)
+```
+
+```{r}
+
+tidy_books <- austen_books() |>
+  group_by(book) |>
+  mutate(linenumber = row_number()) |>
+  ungroup() |>
+  unnest_tokens(word, text)
+
+head(tidy_books)
+
+```
+
+```{r}
+
+nrc_joy <- get_sentiments("nrc") |>
+  filter(sentiment == "joy")
+
+tidy_books |>
+  filter(book == "Emma") |>
+  inner_join(nrc_joy, by = "word") |>
+  count(word, sort = TRUE) |>
+  head(10)
+```
+
+```{r}
+
+jane_sentiment <- tidy_books |>
+  inner_join(get_sentiments("bing"), by = "word") |>
+  count(book, index = linenumber %/% 80, sentiment) |>
+  pivot_wider(
+    names_from = sentiment,
+    values_from = n,
+    values_fill = 0
+  ) |>
+  mutate(net_sentiment = positive - negative)
+
+ggplot(jane_sentiment,
+       aes(x = index, y = net_sentiment, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free_x") +
+  labs(
+    title = "Sentiment Across Jane Austen's Novels",
+    x = "80-line section",
+    y = "Net sentiment"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+pride_afinn <- tidy_books |>
+  filter(book == "Pride & Prejudice") |>
+  inner_join(get_sentiments("afinn"), by = "word") |>
+  group_by(index = linenumber %/% 80) |>
+  summarise(
+    afinn_score = sum(value),
+    .groups = "drop"
+  )
+
+head(pride_afinn, 10)
+```
+
+## Jane Austen Sentiment Analysis - Interpretation:
+
+The analysis utilizes the NRC, Bing, and AFINN sentiment lexicons to analyze emotional patterns in Jane Austen's novels. NRC pinpoints terms connected to sentiments like joy, whereas Bing categorizes terms as optimistic or pessimistic. AFINN designates score ratings to quantify sentiment intensity.
+
+```{r}
+
+frankenstein <- gutenberg_download(
+  84,
+  meta_fields = "title"
+) |>
+  mutate(linenumber = row_number()) |>
+  unnest_tokens(word, text)
+
+frank_bing <- frankenstein |>
+  inner_join(get_sentiments("bing"), by = "word") |>
+  count(index = linenumber %/% 80, sentiment) |>
+  pivot_wider(
+    names_from = sentiment,
+    values_from = n,
+    values_fill = 0
+  ) |>
+  mutate(net_sentiment = positive - negative)
+
+ggplot(frank_bing, aes(index, net_sentiment)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Sentiment Throughout Frankenstein",
+    x = "80-line section",
+    y = "Net sentiment"
+  ) +
+  theme_minimal()
+
+```
+
+## Frankenstein Interpretation
+
+I was able to extend the original work by implementing Bing sentiment lexicon to Mary Shelley's Frankenstein. Applying the coinciding 80-line grouping method, we can examine changes in positive and negative language across the novel. This extension showcases how the same text-mining approach can be implemented on a different library genre. Shifts in sentiment throughout sections could be explained by changes in emotional tone of the story.
+
+```{r}
+
+loughran <- get_sentiments("loughran") |>
+  filter(sentiment %in% c("positive", "negative"))
+
+compare_lexicons <- function(tokens, lexicon, name) {
+  tokens |>
+    inner_join(lexicon, by = "word") |>
+    count(sentiment) |>
+    mutate(lexicon = name)
+}
+
+comparison <- bind_rows(
+  compare_lexicons(
+    frankenstein, get_sentiments("bing"), "Bing"
+  ),
+  compare_lexicons(
+    frankenstein, loughran, "Loughran"
+  )
+) |>
+  pivot_wider(
+    names_from = sentiment,
+    values_from = n,
+    values_fill = 0
+  ) |>
+  mutate(
+    net_sentiment = positive - negative,
+    positive_share = positive / (positive + negative)
+  )
+
+comparison
+
+```
+
+```{r}
+
+comparison |>
+  select(lexicon, positive, negative) |>
+  pivot_longer(
+    c(positive, negative),
+    names_to = "sentiment",
+    values_to = "matches"
+  ) |>
+  ggplot(aes(x = lexicon, y = matches,
+             fill = sentiment)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Frankenstein: Bing vs. Loughran",
+    x = "Lexicon",
+    y = "Matched word occurrences"
+  ) +
+  theme_minimal()
+
+```
+
+## Lexicon Side-by-Side Interpretation
+
+The Bing and Loughran lexicons give distinct approaches to understanding sentiment. Bing is a all-purpose sentiment dictionary, whereas Loughran was made mainly for financial text.
+
+Comparing such results on Frankenstein indicates how the choice of sentiment dictionary can affect the analysis. Differences in word coverage and categorization may yield varying sentiment scores, even when the text being analyzed is the same.
+
+## Conclusion
+
+The assignment reproduced the sentiment analysis methods shown in Chapter 2 of Text Mining with R and extended them to Mary Shelley's Frankestein.
+
+The analysis showcases how tidy text processing and sentiment lexicons can pinpoint emotional patterns in library works. Comparing Bing and Loughran also emphasizes how dictionary selection can influence results.
